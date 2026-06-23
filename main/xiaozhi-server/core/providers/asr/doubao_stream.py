@@ -3,7 +3,13 @@ import gzip
 import uuid
 import asyncio
 import websockets
-import opuslib_next
+try:
+    import opuslib_next as opuslib
+except Exception:
+    try:
+        import opuslib
+    except Exception:
+        import core.utils.opus_stub as opuslib
 from core.providers.asr.base import ASRProviderBase
 from config.logger import setup_logging
 from core.providers.asr.dto.dto import InterfaceType
@@ -22,7 +28,7 @@ class ASRProvider(ASRProviderBase):
         self.interface_type = InterfaceType.STREAM
         self.config = config
         self.text = ""
-        self.decoder = opuslib_next.Decoder(16000, 1)
+        self.decoder = opuslib.Decoder(16000, 1)
         self.asr_ws = None
         self.forward_task = None
         self.is_processing = False  # 添加处理状态标志

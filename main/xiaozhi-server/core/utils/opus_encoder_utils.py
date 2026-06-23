@@ -6,8 +6,17 @@ Opus编码工具类
 import logging
 import traceback
 import numpy as np
-from opuslib_next import Encoder
-from opuslib_next import constants
+try:
+    from opuslib_next import Encoder
+    from opuslib_next import constants as opus_constants
+except Exception:
+    try:
+        from opuslib import Encoder
+        from opuslib import constants as opus_constants
+    except Exception:
+        import core.utils.opus_stub as opus_stub
+        Encoder = opus_stub.Encoder
+        opus_constants = opus_stub
 from typing import Optional, Callable, Any
 
 class OpusEncoderUtils:
@@ -40,11 +49,11 @@ class OpusEncoderUtils:
         try:
             # 创建Opus编码器
             self.encoder = Encoder(
-                sample_rate, channels, constants.APPLICATION_AUDIO  # 音频优化模式
+                sample_rate, channels, opus_constants.APPLICATION_AUDIO
             )
             self.encoder.bitrate = self.bitrate
             self.encoder.complexity = self.complexity
-            self.encoder.signal = constants.SIGNAL_VOICE  # 语音信号优化
+            self.encoder.signal = opus_constants.SIGNAL_VOICE
         except Exception as e:
             logging.error(f"初始化Opus编码器失败: {e}")
             raise RuntimeError("初始化失败") from e

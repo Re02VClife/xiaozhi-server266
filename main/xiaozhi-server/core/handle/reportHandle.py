@@ -11,7 +11,13 @@ TTS上报功能已集成到ConnectionHandler类中。
 
 import time
 import json
-import opuslib_next
+try:
+    import opuslib_next as opuslib
+except Exception:
+    try:
+        import opuslib
+    except Exception:
+        import core.utils.opus_stub as opuslib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -62,14 +68,14 @@ def opus_to_wav(conn: "ConnectionHandler", opus_data):
     """
     decoder = None
     try:
-        decoder = opuslib_next.Decoder(16000, 1)  # 16kHz, 单声道
+        decoder = opuslib.Decoder(16000, 1)  # 16kHz, 单声道
         pcm_data = []
 
         for opus_packet in opus_data:
             try:
                 pcm_frame = decoder.decode(opus_packet, 960)  # 960 samples = 60ms
                 pcm_data.append(pcm_frame)
-            except opuslib_next.OpusError as e:
+            except opuslib.OpusError as e:
                 conn.logger.bind(tag=TAG).error(f"Opus解码错误: {e}", exc_info=True)
 
         if not pcm_data:

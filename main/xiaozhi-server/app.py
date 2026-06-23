@@ -44,7 +44,10 @@ async def monitor_stdin():
 
 
 async def main():
-    check_ffmpeg_installed()
+    try:
+        check_ffmpeg_installed()
+    except ValueError:
+        logger.warning("ffmpeg not found, audio disabled (text chat still works)")
     config = load_config()
 
     # auth_key优先级：配置文件server.auth_key > manager-api.secret > 自动生成

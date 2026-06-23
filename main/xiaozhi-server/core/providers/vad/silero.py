@@ -1,7 +1,13 @@
 import time
 import os
 import numpy as np
-import opuslib_next
+try:
+    import opuslib_next as opuslib
+except Exception:
+    try:
+        import opuslib
+    except Exception:
+        import core.utils.opus_stub as opuslib
 import onnxruntime
 from config.logger import setup_logging
 from core.providers.vad.base import VADProviderBase
@@ -40,7 +46,7 @@ class VADProvider(VADProviderBase):
     def _init_connection_state(self, conn):
         """为连接初始化独立的 VAD 状态"""
         if not hasattr(conn, "_vad_opus_decoder"):
-            conn._vad_opus_decoder = opuslib_next.Decoder(16000, 1)
+            conn._vad_opus_decoder = opuslib.Decoder(16000, 1)
         if not hasattr(conn, "_vad_state"):
             conn._vad_state = np.zeros((2, 1, 128), dtype=np.float32)
         if not hasattr(conn, "_vad_context"):
@@ -115,7 +121,7 @@ class VADProvider(VADProviderBase):
                     conn.vad_last_voice_time = time.time() * 1000
 
             return client_have_voice
-        except opuslib_next.OpusError as e:
+        except opuslib.OpusError as e:
             logger.bind(tag=TAG).info(f"解码错误: {e}")
         except Exception as e:
             logger.bind(tag=TAG).error(f"Error processing audio packet: {e}")

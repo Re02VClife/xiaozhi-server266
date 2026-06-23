@@ -2,7 +2,13 @@ import json
 import uuid
 import asyncio
 import websockets
-import opuslib_next
+try:
+    import opuslib_next as opuslib
+except Exception:
+    try:
+        import opuslib
+    except Exception:
+        import core.utils.opus_stub as opuslib
 from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -22,7 +28,7 @@ class ASRProvider(ASRProviderBase):
         self.interface_type = InterfaceType.STREAM
         self.config = config
         self.text = ""
-        self.decoder = opuslib_next.Decoder(16000, 1)
+        self.decoder = opuslib.Decoder(16000, 1)
         self.asr_ws = None
         self.forward_task = None
         self.is_processing = False

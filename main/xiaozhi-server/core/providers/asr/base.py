@@ -10,7 +10,13 @@ import asyncio
 import tempfile
 import traceback
 import threading
-import opuslib_next
+try:
+    import opuslib_next as opuslib
+except Exception:
+    try:
+        import opuslib
+    except Exception:
+        import core.utils.opus_stub as opuslib
 
 from abc import ABC, abstractmethod
 from config.logger import setup_logging
@@ -356,7 +362,7 @@ class ASRProviderBase(ABC):
         """将Opus音频数据解码为PCM数据"""
         decoder = None
         try:
-            decoder = opuslib_next.Decoder(16000, 1)
+            decoder = opuslib.Decoder(16000, 1)
             pcm_data = []
             buffer_size = 960  # 每次处理960个采样点 (60ms at 16kHz)
 
@@ -369,7 +375,7 @@ class ASRProviderBase(ABC):
                     if pcm_frame and len(pcm_frame) > 0:
                         pcm_data.append(pcm_frame)
 
-                except opuslib_next.OpusError as e:
+                except opuslib.OpusError as e:
                     logger.bind(tag=TAG).warning(f"Opus解码错误，跳过数据包 {i}: {e}")
                 except Exception as e:
                     logger.bind(tag=TAG).error(f"音频处理错误，数据包 {i}: {e}")

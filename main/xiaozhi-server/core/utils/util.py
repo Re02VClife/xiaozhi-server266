@@ -8,7 +8,13 @@ import asyncio
 import requests
 import subprocess
 import numpy as np
-import opuslib_next
+try:
+    import opuslib_next as opuslib
+except Exception:
+    try:
+        import opuslib
+    except Exception:
+        import core.utils.opus_stub as opuslib  # Windows 桩
 from io import BytesIO
 from core.utils import p3
 from pydub import AudioSegment
@@ -285,7 +291,7 @@ async def audio_to_data(
         raw_data = audio.raw_data
 
         # 初始化Opus编码器
-        encoder = opuslib_next.Encoder(16000, 1, opuslib_next.APPLICATION_AUDIO)
+        encoder = opuslib.Encoder(16000, 1, opuslib.APPLICATION_AUDIO)
 
         # 编码参数
         frame_duration = 60  # 60ms per frame
@@ -356,7 +362,7 @@ def pcm_to_data_stream(raw_data, is_opus=True, callback: Callable[[Any], Any] = 
     """
     using_temp_encoder = False
     if is_opus and opus_encoder is None:
-        encoder = opuslib_next.Encoder(sample_rate, 1, opuslib_next.APPLICATION_AUDIO)
+        encoder = opuslib.Encoder(sample_rate, 1, opuslib.APPLICATION_AUDIO)
         using_temp_encoder = True
 
     # 编码参数
@@ -392,7 +398,7 @@ def opus_datas_to_wav_bytes(opus_datas, sample_rate=16000, channels=1):
     """
     将opus帧列表解码为wav字节流
     """
-    decoder = opuslib_next.Decoder(sample_rate, channels)
+    decoder = opuslib.Decoder(sample_rate, channels)
     try:
         pcm_datas = []
 

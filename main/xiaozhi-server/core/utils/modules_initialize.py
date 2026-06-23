@@ -115,18 +115,22 @@ def initialize_tts(config):
 
 def initialize_asr(config):
     select_asr_module = config["selected_module"]["ASR"]
-    asr_type = (
-        select_asr_module
-        if "type" not in config["ASR"][select_asr_module]
-        else config["ASR"][select_asr_module]["type"]
-    )
-    new_asr = asr.create_instance(
-        asr_type,
-        config["ASR"][select_asr_module],
-        str(config.get("delete_audio", True)).lower() in ("true", "1", "yes"),
-    )
-    logger.bind(tag=TAG).info("ASR模块初始化完成")
-    return new_asr
+    try:
+        asr_type = (
+            select_asr_module
+            if "type" not in config["ASR"][select_asr_module]
+            else config["ASR"][select_asr_module]["type"]
+        )
+        new_asr = asr.create_instance(
+            asr_type,
+            config["ASR"][select_asr_module],
+            str(config.get("delete_audio", True)).lower() in ("true", "1", "yes"),
+        )
+        logger.bind(tag=TAG).info("ASR模块初始化完成")
+        return new_asr
+    except Exception as e:
+        logger.bind(tag=TAG).warning(f"ASR模块初始化失败: {e}，文字对话仍可用")
+        return None
 
 
 def initialize_voiceprint(asr_instance, config):
