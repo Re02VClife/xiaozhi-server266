@@ -3,16 +3,24 @@ from aiohttp import web
 from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
+from core.handle.feishu_handler import FeishuBot
 
 TAG = __name__
 
 
 class SimpleHttpServer:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, shared_llm=None):
         self.config = config
         self.logger = setup_logging()
         self.ota_handler = OTAHandler(config)
         self.vision_handler = VisionHandler(config)
+
+        # 飞书 Bot（如果 LLM 可用且配置了飞书）
+        self.feishu: FeishuBot = None
+        if shared_llm is not None:
+            self.feishu = FeishuBot(config, shared_llm)
+            if self.feishu.enabled:
+                self.logger.bind(tag=TAG).info("[飞书] 飞书 Bot 回调已就绪")
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """获取websocket地址
@@ -31,6 +39,31 @@ class SimpleHttpServer:
             return websocket_config
         else:
             return f"ws://{local_ip}:{port}/xiaozhi/v1/"
+
+    async def feishu_callback_handler(self, request: web.Request) -> web.Response:
+        """飞书事件回调处理"""
+        try:
+            body = await request.json()
+
+            # 处理 URL 验证
+            if "challenge" in body:
+                result = self.feishu.verify_url(
+                    body.get("challenge", ""),
+                    body.get("token", ""),
+                )
+                return web.json_response(result)
+
+            # 异步处理消息事件（先返回 200，避免飞书超时重试）
+            event_type = body.get("header", {}).get("event_type", "")
+            if event_type == "im.message.receive_v1":
+                asyncio.create_task(
+                    self.feishu.handle_callback(body)
+                )
+
+            return web.json_response({"code": 0})
+        except Exception as e:
+            self.logger.bind(tag=TAG).error(f"[飞书] 回调处理异常: {e}")
+            return web.json_response({"code": 1, "msg": str(e)})
 
     async def start(self):
         try:
@@ -74,6 +107,15 @@ class SimpleHttpServer:
                         ),
                     ]
                 )
+
+                # 飞书 Bot 回调路由（仅在飞书启用时注册）
+                if self.feishu and self.feishu.enabled:
+                    app.add_routes(
+                        [
+                            web.post("/feishu/callback", self.feishu_callback_handler),
+                            web.get("/feishu/callback", self.feishu_callback_handler),
+                        ]
+                    )
 
                 # 运行服务
                 runner = web.AppRunner(app)

@@ -74,8 +74,9 @@ async def main():
     # 启动 WebSocket 服务器
     ws_server = WebSocketServer(config)
     ws_task = asyncio.create_task(ws_server.start())
-    # 启动 Simple http 服务器
-    ota_server = SimpleHttpServer(config)
+    # 启动 Simple http 服务器（共享 LLM 实例，供飞书 Bot 等使用）
+    shared_llm = ws_server._llm if hasattr(ws_server, '_llm') else None
+    ota_server = SimpleHttpServer(config, shared_llm=shared_llm)
     ota_task = asyncio.create_task(ota_server.start())
 
     read_config_from_api = config.get("read_config_from_api", False)

@@ -340,6 +340,21 @@ Memory:
     # 如果你的不想使用selected_module.LLM记忆存储，这里最好使用独立的LLM作为意图识别，例如使用免费的ChatGLMLLM
     llm: ChatGLMLLM
 
+# ============================================================
+# 飞书 Bot 配置
+# 将飞书消息桥接到小智 AI 的 LLM 流水线
+# 飞书开放平台创建 Bot 后，在此填入 App ID / Secret
+# ============================================================
+feishu:
+  # 是否启用飞书 Bot 回调（默认关闭）
+  enabled: false
+  # 飞书应用 App ID
+  app_id: "你的飞书App ID"
+  # 飞书应用 App Secret
+  app_secret: "你的飞书App Secret"
+  # 飞书事件订阅 Verification Token
+  verify_token: "你的Verification Token"
+
 ASR:
   FunASR:
     type: fun_local
