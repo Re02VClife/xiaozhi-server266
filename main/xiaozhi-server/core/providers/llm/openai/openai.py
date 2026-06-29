@@ -117,6 +117,7 @@ class LLMProvider(LLMProviderBase):
             "messages": dialogue,
             "stream": True,
             "tools": functions,
+            "tool_choice": "auto",
         }
 
         optional_params = {

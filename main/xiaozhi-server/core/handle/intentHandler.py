@@ -16,6 +16,91 @@ from core.providers.tts.dto.dto import TTSMessageDTO, SentenceType
 
 TAG = __name__
 
+# 机械臂控制关键词（用于绕过 LLM 函数调用，直接路由到 move_arm 插件）
+# 注意：不含"抓取/抓住/拿起"等需要视觉的指令，这些留给 LLM → vla_grasp
+ARM_KEYWORDS = [
+    "机械臂", "手臂", "夹爪",
+    "抬起", "抬高", "举起来", "往上", "上升", "升高",
+    "放下", "降下", "降低", "往下", "下降", "落下来",
+    "左转", "向左", "右转", "向右", "转腕",
+    "伸出", "伸出去", "往前", "展开",
+    "收回", "缩回", "收回来", "往后", "折叠",
+    "张开", "闭合", "夹紧", "合上", "松开", "释放",
+    "归位", "回正", "复位", "初始位置", "回零",
+]
+
+
+def _has_arm_command(text: str) -> bool:
+    """检测文本是否包含机械臂控制指令"""
+    return any(kw in text for kw in ARM_KEYWORDS)
+
+
+async def _handle_debug_command(conn: "ConnectionHandler", text: str) -> bool:
+    """处理调试直控指令（绕过 LLM 和 move_arm 插件，直接调 MCP 工具）。
+
+    格式：
+      !J:[90,45,90,90,90,90]  — 直接控制 6 个关节角度
+      !J:[90,45,90,90,90,90],speed=60  — 带速度
+      !G:open  或  !G:close   — 夹爪控制
+      !G:open,50              — 夹爪带速度
+
+    Returns: True 如果处理了调试指令
+    """
+    if not text.startswith("!"):
+        return False
+
+    from core.providers.tools.device_mcp.mcp_handler import call_mcp_tool
+
+    # 检查 MCP 是否就绪
+    if not hasattr(conn, "mcp_client") or not conn.mcp_client:
+        conn.logger.bind(tag=TAG).warning("调试指令失败: MCP 客户端未初始化")
+        return True
+
+    try:
+        if text.startswith("!J:"):
+            # 关节角度: !J:[90,45,90,90,90,90] 或 !J:[90,45,90,90,90,90],speed=50
+            cmd = text[3:].strip()
+            speed = 40
+            if ",speed=" in cmd:
+                parts = cmd.split(",speed=")
+                cmd = parts[0]
+                speed = int(parts[1])
+            angles = json.loads(cmd)
+            safe = [max(0, min(180, int(a))) for a in angles[:6]]
+            while len(safe) < 6:
+                safe.append(90)
+            args = json.dumps({"angles": json.dumps(safe), "speed": speed})
+            conn.logger.bind(tag=TAG).info(f"🎮 直控关节: {safe}, 速度={speed}")
+            result = await call_mcp_tool(conn, conn.mcp_client, "robot.arm.move_joints", args, timeout=10)
+            conn.logger.bind(tag=TAG).info(f"🎮 关节结果: {result}")
+            await send_stt_message(conn, f"关节→{safe}")
+            # 简短 TTS 反馈
+            conn.tts.tts_one_sentence(conn, "ok", content_detail=f"关节已调至{safe[1]}度")
+            return True
+
+        elif text.startswith("!G:"):
+            # 夹爪: !G:open 或 !G:close 或 !G:open,50
+            cmd = text[3:].strip()
+            speed = 50
+            if "," in cmd:
+                parts = cmd.split(",")
+                cmd = parts[0]
+                speed = int(parts[1])
+            is_open = cmd.lower() in ("open", "true", "1", "开")
+            args = json.dumps({"open": is_open, "speed": speed})
+            conn.logger.bind(tag=TAG).info(f"🎮 直控夹爪: {'张开' if is_open else '闭合'}, 速度={speed}")
+            result = await call_mcp_tool(conn, conn.mcp_client, "robot.arm.gripper", args, timeout=10)
+            conn.logger.bind(tag=TAG).info(f"🎮 夹爪结果: {result}")
+            await send_stt_message(conn, f"夹爪→{'张开' if is_open else '闭合'}")
+            conn.tts.tts_one_sentence(conn, "ok", content_detail="夹爪已操作")
+            return True
+
+    except Exception as e:
+        conn.logger.bind(tag=TAG).error(f"调试指令失败: {e}")
+        return True
+
+    return False
+
 
 async def handle_user_intent(conn: "ConnectionHandler", text):
     # 预处理输入文本，处理可能的JSON格式
@@ -42,6 +127,22 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
         return True
 
     if conn.intent_type == "function_call":
+        # 🆕 调试直控指令（!J: / !G: 前缀，直接调 MCP 工具，不经过 LLM）
+        if await _handle_debug_command(conn, text):
+            return True
+
+        # 🆕 机械臂指令前置拦截：qwen-turbo 等轻量模型 function calling 能力弱，
+        # 检测到机械臂关键词时直接构造 move_arm 调用，绕过 LLM 工具选择
+        if _has_arm_command(text):
+            conn.logger.bind(tag=TAG).info(f"检测到机械臂指令，直接路由到 move_arm: {text}")
+            intent_result = json.dumps({
+                "function_call": {
+                    "name": "move_arm",
+                    "arguments": {"instruction": text}
+                }
+            })
+            return await process_intent_result(conn, intent_result, text)
+
         # 使用支持function calling的聊天方法,不再进行意图分析
         return False
     # 使用LLM进行意图分析

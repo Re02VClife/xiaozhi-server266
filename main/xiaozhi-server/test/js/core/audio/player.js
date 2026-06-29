@@ -7,9 +7,10 @@ import { createStreamingContext } from './stream-context.js?v=0205';
 export class AudioPlayer {
     constructor() {
         // 音频参数
-        this.SAMPLE_RATE = 16000;
+        this.SAMPLE_RATE = 24000;
         this.CHANNELS = 1;
-        this.FRAME_SIZE = 960;
+        this.FRAME_DURATION = 60;  // ms
+        this.FRAME_SIZE = Math.floor(24000 * 60 / 1000);  // 1440, 必须匹配 sample_rate * frame_duration
         this.MIN_AUDIO_DURATION = 0.12;
 
         // 状态
@@ -20,14 +21,30 @@ export class AudioPlayer {
         this.isPlaying = false;
     }
 
+    // 动态更新采样率（由 websocket hello 回调调用）
+    setSampleRate(rate) {
+        if (rate && rate !== this.SAMPLE_RATE) {
+            log('更新采样率: ' + this.SAMPLE_RATE + ' -> ' + rate, 'info');
+            this.SAMPLE_RATE = rate;
+            this.FRAME_SIZE = Math.floor(rate * this.FRAME_DURATION / 1000);
+            this.audioContext = null;
+            this.opusDecoder = null;
+            this.streamingContext = null;
+        }
+    }
+
     // 获取或创建AudioContext
     getAudioContext() {
         if (!this.audioContext) {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                sampleRate: this.SAMPLE_RATE,
                 latencyHint: 'interactive'
             });
-            log('创建音频上下文，采样率: ' + this.SAMPLE_RATE + 'Hz', 'debug');
+            log('AudioContext 创建, rate=' + this.SAMPLE_RATE + ' state=' + this.audioContext.state, 'info');
+        }
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume().then(() => {
+                log('AudioContext 已恢复, state=' + this.audioContext.state, 'success');
+            });
         }
         return this.audioContext;
     }
@@ -39,7 +56,7 @@ export class AudioPlayer {
         try {
             if (typeof window.ModuleInstance === 'undefined') {
                 if (typeof Module !== 'undefined') {
-                    window.ModuleInstance = Module;
+                    window.ModuleInstance = Module.instance;
                     log('使用全局Module作为ModuleInstance', 'info');
                 } else {
                     throw new Error('Opus库未加载，ModuleInstance和Module对象都不存在');
@@ -185,6 +202,17 @@ export class AudioPlayer {
         try {
             this.audioContext = this.getAudioContext();
 
+            // 强制 resume（必须 await，否则 Chrome 静音）
+            if (this.audioContext.state !== 'running') {
+                log('AudioContext state=' + this.audioContext.state + ', 尝试 resume...', 'warning');
+                try {
+                    await this.audioContext.resume();
+                    log('AudioContext 已 resume, state=' + this.audioContext.state, 'success');
+                } catch(e) {
+                    log('AudioContext resume 失败: ' + e.message, 'error');
+                }
+            }
+
             if (!this.opusDecoder) {
                 log('初始化Opus解码器...', 'info');
                 try {
@@ -201,12 +229,18 @@ export class AudioPlayer {
             }
 
             if (!this.streamingContext) {
+                // 创建增益节点，默认 1.0（最大音量）
+                this.gainNode = this.audioContext.createGain();
+                this.gainNode.gain.value = 1.0;
+                this.gainNode.connect(this.audioContext.destination);
+
                 this.streamingContext = createStreamingContext(
                     this.opusDecoder,
                     this.audioContext,
                     this.SAMPLE_RATE,
                     this.CHANNELS,
-                    this.MIN_AUDIO_DURATION
+                    this.MIN_AUDIO_DURATION,
+                    this.gainNode     // 传入 gainNode 代替直接连 destination
                 );
             }
 

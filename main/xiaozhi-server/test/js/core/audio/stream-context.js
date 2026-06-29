@@ -3,7 +3,7 @@ import { log } from '../../utils/logger.js?v=0205';
 
 // 音频流播放上下文类
 export class StreamingContext {
-    constructor(opusDecoder, audioContext, sampleRate, channels, minAudioDuration) {
+    constructor(opusDecoder, audioContext, sampleRate, channels, minAudioDuration, destination) {
         this.opusDecoder = opusDecoder;
         this.audioContext = audioContext;
 
@@ -12,19 +12,22 @@ export class StreamingContext {
         this.channels = channels;
         this.minAudioDuration = minAudioDuration;
 
-        // 初始化队列和状态
-        this.queue = [];          // 已解码的PCM队列。正在播放
-        this.activeQueue = new BlockingQueue(); // 已解码的PCM队列。准备播放
-        this.pendingAudioBufferQueue = [];  // 待处理的缓存队列
-        this.audioBufferQueue = new BlockingQueue();  // 缓存队列
-        this.playing = false;     // 是否正在播放
-        this.endOfStream = false; // 是否收到结束信号
-        this.source = null;       // 当前音频源
-        this.totalSamples = 0;    // 累积的总样本数
-        this.lastPlayTime = 0;    // 上次播放的时间戳
-        this.scheduledEndTime = 0; // 已调度音频的结束时间
+        // 输出目标（gainNode 或 destination）
+        this.destination = destination || this.audioContext.destination;
 
-        // 初始化分析器节点（供Live2D使用）
+        // 初始化队列和状态
+        this.queue = [];
+        this.activeQueue = new BlockingQueue();
+        this.pendingAudioBufferQueue = [];
+        this.audioBufferQueue = new BlockingQueue();
+        this.playing = false;
+        this.endOfStream = false;
+        this.source = null;
+        this.totalSamples = 0;
+        this.lastPlayTime = 0;
+        this.scheduledEndTime = 0;
+
+        // 分析器节点（供Live2D使用）
         this.analyser = this.audioContext.createAnalyser();
         this.analyser.fftSize = 256;
     }
@@ -158,64 +161,41 @@ export class StreamingContext {
         }
     }
 
-    // 开始播放音频
+    // 开始播放音频（简化版：立即播放，不调度）
     async startPlaying() {
-        this.scheduledEndTime = this.audioContext.currentTime; // 跟踪已调度音频的结束时间
-
+        const minSamples = this.sampleRate * this.minAudioDuration * 2;
         while (true) {
-            // 初始缓冲：等待足够的样本再开始播放
-            const minSamples = this.sampleRate * this.minAudioDuration * 2;
-            if (!this.playing && this.queue.length < minSamples) {
+            if (this.queue.length < minSamples) {
                 await this.getQueue(minSamples);
             }
             this.playing = true;
 
-            // 持续播放队列中的音频，每次播放一个小块
             while (this.playing && this.queue.length > 0) {
-                // 每次播放120ms的音频（2个Opus包）
-                const playDuration = 0.12;
-                const targetSamples = Math.floor(this.sampleRate * playDuration);
-                const actualSamples = Math.min(this.queue.length, targetSamples);
-
-                if (actualSamples === 0) break;
-
-                const currentSamples = this.queue.splice(0, actualSamples);
+                const chunkSize = Math.min(this.queue.length, Math.floor(this.sampleRate * 0.12));
+                const currentSamples = this.queue.splice(0, chunkSize);
                 const audioBuffer = this.audioContext.createBuffer(this.channels, currentSamples.length, this.sampleRate);
                 audioBuffer.copyToChannel(new Float32Array(currentSamples), 0);
 
-                // 创建音频源
+                // 清理旧 source
+                if (this.source) { try { this.source.stop(); } catch(e) {} }
+
                 this.source = this.audioContext.createBufferSource();
                 this.source.buffer = audioBuffer;
-
-                // 精确调度播放时间
-                const currentTime = this.audioContext.currentTime;
-                const startTime = Math.max(this.scheduledEndTime, currentTime);
-
-                // 连接到分析器和输出
                 this.source.connect(this.analyser);
-                this.source.connect(this.audioContext.destination);
+                this.source.connect(this.destination);
+                this.source.start();  // 立即播放，不调度时间
 
-                log(`调度播放 ${currentSamples.length} 个样本，约 ${(currentSamples.length / this.sampleRate).toFixed(2)} 秒`, 'debug');
-                this.source.start(startTime);
+                // 播放完成后自动断开
+                this.source.onended = () => { this.source = null; };
 
-                // 更新下一个音频块的调度时间
-                const duration = audioBuffer.duration;
-                this.scheduledEndTime = startTime + duration;
-                this.lastPlayTime = startTime;
-
-                // 如果队列中数据不足，等待新数据
-                if (this.queue.length < targetSamples) {
-                    break;
-                }
+                log(`播放 ${currentSamples.length} 样本 (${(currentSamples.length/this.sampleRate*1000).toFixed(0)}ms)`, 'debug');
             }
-
-            // 等待新数据
             await this.getQueue(minSamples);
         }
     }
 }
 
 // 创建streamingContext实例的工厂函数
-export function createStreamingContext(opusDecoder, audioContext, sampleRate, channels, minAudioDuration) {
-    return new StreamingContext(opusDecoder, audioContext, sampleRate, channels, minAudioDuration);
+export function createStreamingContext(opusDecoder, audioContext, sampleRate, channels, minAudioDuration, destination) {
+    return new StreamingContext(opusDecoder, audioContext, sampleRate, channels, minAudioDuration, destination);
 }

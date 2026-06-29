@@ -76,6 +76,14 @@ export class WebSocketHandler {
             log(`服务器回应：${JSON.stringify(message, null, 2)}`, 'success');
             window.cameraAvailable = true;
             log('连接成功，摄像头已可用', 'success');
+
+            // 同步服务器下发的音频采样率
+            if (message.audio_params && message.audio_params.sample_rate) {
+                const audioPlayer = getAudioPlayer();
+                audioPlayer.setSampleRate(message.audio_params.sample_rate);
+                log(`音频采样率: ${message.audio_params.sample_rate}Hz`, 'info');
+            }
+
             uiController.updateDialButton(true);
             uiController.startAIChatSession();
         } else if (message.type === 'tts') {
