@@ -25,7 +25,7 @@ ARM_KEYWORDS = [
     "左转", "向左", "右转", "向右", "转腕",
     "伸出", "伸出去", "往前", "展开",
     "收回", "缩回", "收回来", "往后", "折叠",
-    "张开", "闭合", "夹紧", "合上", "松开", "释放",
+    "打开", "张开", "闭合", "夹紧", "合上", "松开", "释放",
     "归位", "回正", "复位", "初始位置", "回零",
 ]
 
@@ -125,6 +125,9 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
     # 检查是否是唤醒词
     if await checkWakeupWords(conn, filtered_text):
         return True
+
+    # 🆕 诊断日志：跟踪意图处理路径
+    conn.logger.bind(tag=TAG).info(f"🔍 handle_user_intent: text='{text}', intent_type='{conn.intent_type}', has_arm_cmd={_has_arm_command(text)}")
 
     if conn.intent_type == "function_call":
         # 🆕 调试直控指令（!J: / !G: 前缀，直接调 MCP 工具，不经过 LLM）

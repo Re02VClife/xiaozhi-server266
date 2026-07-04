@@ -188,12 +188,18 @@ class ConnectionHandler:
         self.iot_descriptors = {}
         self.func_handler = None
 
+        # 🆕 从配置读取 intent_type（不依赖 _initialize_intent）
+        sel = self.config.get("selected_module", {}).get("Intent", "nointent")
+        self.intent_type = self.config.get("Intent", {}).get(sel, {}).get("type", "nointent")
+
         self.cmd_exit = self.config["exit_commands"]
 
         # 是否在聊天结束后关闭连接
         self.close_after_chat = False
         self.load_function_plugin = False
-        self.intent_type = "nointent"
+        # 从配置读取 intent_type，默认为 nointent
+        sel = self.config.get("selected_module", {}).get("Intent", "nointent")
+        self.intent_type = self.config.get("Intent", {}).get(sel, {}).get("type", "nointent")
 
         self.timeout_seconds = (
                 int(self.config.get("close_connection_no_voice_time", 120)) + 60
@@ -525,6 +531,9 @@ class ConnectionHandler:
                     f"快速初始化组件: prompt成功 {prompt[:50]}..."
                 )
 
+            """加载意图识别（必须在音频初始化之前，避免 ASR 异常导致跳过）"""
+            self._initialize_intent()
+
             """初始化本地组件"""
             if self.vad is None:
                 self.vad = self._vad
@@ -540,8 +549,6 @@ class ConnectionHandler:
 
             """加载记忆"""
             self._initialize_memory()
-            """加载意图识别"""
-            self._initialize_intent()
             """初始化上报线程"""
             self._init_report_threads()
             """更新系统提示词"""
@@ -805,13 +812,20 @@ class ConnectionHandler:
                 self.logger.bind(tag=TAG).info("使用主LLM作为意图识别模型")
 
     def _initialize_intent(self):
-        if self.intent is None:
-            return
+        # 先读取 intent_type（不依赖 self.intent 是否已初始化）
         self.intent_type = self.config["Intent"][
             self.config["selected_module"]["Intent"]
         ]["type"]
+        self.logger.bind(tag=TAG).info(f"🎯 _initialize_intent: intent_type={self.intent_type}, intent is None={self.intent is None}")
         if self.intent_type == "function_call" or self.intent_type == "intent_llm":
             self.load_function_plugin = True
+        """加载统一工具处理器"""
+        self.func_handler = UnifiedToolHandler(self)
+        # 异步初始化工具处理器
+        if hasattr(self, "loop") and self.loop:
+            asyncio.run_coroutine_threadsafe(self.func_handler._initialize(), self.loop)
+        if self.intent is None:
+            return
         """初始化意图识别模块"""
         # 获取意图识别配置
         intent_config = self.config["Intent"]
@@ -845,13 +859,6 @@ class ConnectionHandler:
                 # 否则使用主LLM
                 self.intent.set_llm(self.llm)
                 self.logger.bind(tag=TAG).info("使用主LLM作为意图识别模型")
-
-        """加载统一工具处理器"""
-        self.func_handler = UnifiedToolHandler(self)
-
-        # 异步初始化工具处理器
-        if hasattr(self, "loop") and self.loop:
-            asyncio.run_coroutine_threadsafe(self.func_handler._initialize(), self.loop)
 
     def change_system_prompt(self, prompt):
         self.prompt = prompt

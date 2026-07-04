@@ -147,10 +147,14 @@ async def move_arm(conn: "ConnectionHandler", instruction: str) -> ActionRespons
     Returns:
         ActionResponse: 执行结果
     """
-    logger.bind(tag=TAG).info(f"收到机械臂指令: {instruction}")
+    import traceback
+    logger.bind(tag=TAG).info(f"======================================== MOVE_ARM 入口: {instruction}")
+    print(f"[MOVE_ARM] 收到指令: {instruction}", flush=True)
 
     # 检查 MCP 客户端
     if not hasattr(conn, "mcp_client") or not conn.mcp_client:
+        logger.bind(tag=TAG).error(f"MCP客户端不存在! hasattr={hasattr(conn, 'mcp_client')}, mcp_client={getattr(conn, 'mcp_client', 'N/A')}")
+        print(f"[MOVE_ARM] MCP客户端不存在!", flush=True)
         return ActionResponse(
             Action.REQLLM,
             "机械臂设备当前不在线，请确认ESP32已连接。",
@@ -177,6 +181,8 @@ async def move_arm(conn: "ConnectionHandler", instruction: str) -> ActionRespons
     # 执行 MCP 工具调用
     tool_name = parsed["tool"]
     args_json = json.dumps(parsed["args"], ensure_ascii=False)
+
+    logger.bind(tag=TAG).info(f"📡 准备调用 MCP: {tool_name}, args={args_json}, mcp_ready={await conn.mcp_client.is_ready()}")
 
     try:
         result = await call_mcp_tool(
