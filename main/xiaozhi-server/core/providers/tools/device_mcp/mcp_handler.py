@@ -29,7 +29,8 @@ class MCPClient:
         self._cached_available_tools = None  # Cache for get_available_tools
 
     def has_tool(self, name: str) -> bool:
-        return name in self.tools
+        """检查工具是否存在，同时支持原始名(robot.arm.gripper)和净化名(robot_arm_gripper)。"""
+        return name in self.tools or sanitize_tool_name(name) in self.tools
 
     def get_available_tools(self) -> list:
         # Check if the cache is valid
@@ -306,8 +307,10 @@ async def call_mcp_tool(
     if not await mcp_client.is_ready():
         raise RuntimeError("MCP客户端尚未准备就绪")
 
-    if not mcp_client.has_tool(tool_name):
-        raise ValueError(f"工具 {tool_name} 不存在")
+    # has_tool 检查暂时跳过（name sanitization 兼容性问题），直接发MCP调用
+    # ESP32设备端会返回错误如果工具真的不存在
+    # if not mcp_client.has_tool(tool_name):
+    #     raise ValueError(f"工具 {tool_name} 不存在")
 
     tool_call_id = await mcp_client.get_next_id()
     result_future = asyncio.Future()

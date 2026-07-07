@@ -41,9 +41,17 @@ class ServerPluginExecutor(ToolExecutor):
                 # 默认不传conn参数
                 result = func_item.func(**arguments)
 
+            # 如果结果是协程（async函数），等待其完成
+            import asyncio
+            if asyncio.iscoroutine(result):
+                result = await result
+
             return result
 
         except Exception as e:
+            import traceback, sys
+            sys.stderr.write(f"[PLUGIN_EXECUTOR_ERROR] {tool_name}: {e}\n{traceback.format_exc()}\n")
+            sys.stderr.flush()
             return ActionResponse(
                 action=Action.ERROR,
                 response=str(e),

@@ -134,17 +134,7 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
         if await _handle_debug_command(conn, text):
             return True
 
-        # 🆕 机械臂指令前置拦截：qwen-turbo 等轻量模型 function calling 能力弱，
-        # 检测到机械臂关键词时直接构造 move_arm 调用，绕过 LLM 工具选择
-        if _has_arm_command(text):
-            conn.logger.bind(tag=TAG).info(f"检测到机械臂指令，直接路由到 move_arm: {text}")
-            intent_result = json.dumps({
-                "function_call": {
-                    "name": "move_arm",
-                    "arguments": {"instruction": text}
-                }
-            })
-            return await process_intent_result(conn, intent_result, text)
+        # 全部指令交 LLM 推理——LLM 自行选择调用 move_arm 或直调 MCP 工具
 
         # 使用支持function calling的聊天方法,不再进行意图分析
         return False
@@ -286,9 +276,12 @@ async def process_intent_result(
                 if result:
                     enqueue_tool_report(conn, function_name, tool_input, str(result.result) if result.result else None, report_tool_call=False)
 
-                    if result.action == Action.RESPONSE:  # 直接回复前端
-                        text = result.response
-                        if text is not None:
+                    # 检查是否静默模式（response="silent"时跳过TTS语音）
+                    silent = (hasattr(result, 'response') and result.response == "silent")
+
+                    if result.action == Action.RESPONSE:  # 直接回复（静默模式：不生成语音）
+                        text = result.result or result.response or ""
+                        if text and not silent:
                             speak_txt(conn, text)
                     elif result.action == Action.REQLLM:  # 调用函数后再请求llm生成回复
                         text = result.result
@@ -296,13 +289,14 @@ async def process_intent_result(
                         llm_result = conn.intent.replyResult(text, original_text)
                         if llm_result is None:
                             llm_result = text
-                        speak_txt(conn, llm_result)
+                        if not silent:
+                            speak_txt(conn, llm_result)
                     elif (
                         result.action == Action.NOTFOUND
                         or result.action == Action.ERROR
                     ):
                         text = result.response if result.response else result.result
-                        if text is not None:
+                        if text is not None and not silent:
                             speak_txt(conn, text)
                     elif function_name != "play_music":
                         # For backward compatibility with original code
@@ -322,7 +316,12 @@ async def process_intent_result(
         return False
 
 
+# 🔇 全局TTS开关：改为False即可关闭所有语音
+_TTS_ENABLED = False
+
 def speak_txt(conn: "ConnectionHandler", text):
+    if not _TTS_ENABLED:
+        return
     # 记录文本到 sentence_id 映射
     conn.tts.store_tts_text(conn.sentence_id, text)
 
