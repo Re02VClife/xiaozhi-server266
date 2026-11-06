@@ -187,3 +187,5 @@ uploadfile
 !main/manager-mobile/**/.env*
 !main/manager-mobile/**/*.json
 !main/xiaozhi-server/**/*.json
+# 实际生效的配置（含用户自己的密钥），只提交模板 config.yaml.example
+main/xiaozhi-server/config.yaml

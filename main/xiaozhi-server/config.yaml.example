@@ -1,3 +1,9 @@
+# 本文件是模板，不会被 git 跟踪的 config.yaml 才是实际生效的那份。
+# 首次部署：复制本文件为 config.yaml 再按需修改。
+#   Windows:  copy config.yaml.example config.yaml
+#   Linux  :  cp config.yaml.example config.yaml
+# 注意：config.yaml 已在 .gitignore 里，填了真实密钥也不会被提交。
+
 # 在开发中，请在项目根目录创建data目录，然后在data目录创建名称为【.config.yaml】的空文件
 # 然后你想修改覆盖修改什么配置，就修改【.config.yaml】文件，而不是修改【config.yaml】文件
 # 系统会优先读取【data/.config.yaml】文件的配置，如果【.config.yaml】文件里的配置不存在，系统会自动去读取【config.yaml】文件的配置。
